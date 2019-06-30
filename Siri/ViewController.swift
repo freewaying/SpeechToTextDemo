@@ -14,11 +14,16 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate {
 	@IBOutlet weak var textView: UITextView!
 	@IBOutlet weak var microphoneButton: UIButton!
 	
-    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.init(identifier: "en-US"))!
+    private let speechRecognizer = SFSpeechRecognizer(locale: Locale.init(identifier: ViewController.getCurrentLanguageCode()))!
     
     private var recognitionRequest: SFSpeechAudioBufferRecognitionRequest?
     private var recognitionTask: SFSpeechRecognitionTask?
     private let audioEngine = AVAudioEngine()
+
+    class func getCurrentLanguageCode() -> String {
+        let currentLanguageCode = UserDefaults.standard.array(forKey: "AppleLanguages")?.first as? String;
+        return currentLanguageCode ?? "en-US"
+    }
     
 	override func viewDidLoad() {
         super.viewDidLoad()
@@ -46,6 +51,11 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate {
             case .notDetermined:
                 isButtonEnabled = false
                 print("Speech recognition not yet authorized")
+
+            @unknown default:
+                isButtonEnabled = true
+                print("Speech recognition status unknow")
+
             }
             
             OperationQueue.main.addOperation() {
@@ -56,8 +66,17 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate {
 
 	@IBAction func microphoneTapped(_ sender: AnyObject) {
         if audioEngine.isRunning {
-            audioEngine.stop()
-            recognitionRequest?.endAudio()
+            self.audioEngine.stop()
+            let inputNode = audioEngine.inputNode
+            inputNode.removeTap(onBus: 0)
+            inputNode.reset()
+
+            self.recognitionRequest?.endAudio()
+            self.recognitionTask?.cancel()
+
+            self.recognitionRequest = nil
+            self.recognitionTask = nil
+
             microphoneButton.isEnabled = false
             microphoneButton.setTitle("Start Recording", for: .normal)
         } else {
@@ -75,18 +94,16 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate {
         
         let audioSession = AVAudioSession.sharedInstance()  //2
         do {
-            try audioSession.setCategory(AVAudioSessionCategoryRecord)
-            try audioSession.setMode(AVAudioSessionModeMeasurement)
-            try audioSession.setActive(true, with: .notifyOthersOnDeactivation)
+            try audioSession.setCategory(AVAudioSession.Category.record)
+            try audioSession.setMode(AVAudioSession.Mode.measurement)
+            try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         } catch {
             print("audioSession properties weren't set because of an error.")
         }
         
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()  //3
         
-        guard let inputNode = audioEngine.inputNode else {
-            fatalError("Audio engine has no input node")
-        }  //4
+        let inputNode = audioEngine.inputNode //4
         
         guard let recognitionRequest = recognitionRequest else {
             fatalError("Unable to create an SFSpeechAudioBufferRecognitionRequest object")
@@ -107,6 +124,10 @@ class ViewController: UIViewController, SFSpeechRecognizerDelegate {
             if error != nil || isFinal {  //10
                 self.audioEngine.stop()
                 inputNode.removeTap(onBus: 0)
+                inputNode.reset()
+
+                self.recognitionRequest?.endAudio()
+                self.recognitionTask?.cancel()
                 
                 self.recognitionRequest = nil
                 self.recognitionTask = nil
